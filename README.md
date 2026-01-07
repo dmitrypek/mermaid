@@ -1,4 +1,4 @@
-<code>```mermaid</code>
+```mermaid
 sequenceDiagram
 participant App
 participant CL
@@ -30,3 +30,4 @@ alt final_not_done
 else final_done
   CL-->>App: OK
 end
+```
