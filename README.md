@@ -1,4 +1,4 @@
-mermaid
+<code>```mermaid</code>
 sequenceDiagram
 participant App
 participant CL
