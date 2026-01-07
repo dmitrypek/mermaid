@@ -1,33 +1,47 @@
 ```mermaid
 sequenceDiagram
-participant App
-participant CL
-participant Intra
-participant Net
-participant Stream
+    autonumber
+    participant App as App Thread
+    participant CL as CL/HIER Progress
+    participant Intra as Intra TL (CUDA/CPU)
+    participant Net as Inter TL (UCP/SHARP)
+    participant S as CUDA Stream (EE)
+    participant E as CUDA Event
 
-App->>CL: collective_post
-CL->>Intra: post_intra_1
-Intra->>Stream: enqueue_gpu_ops
-CL->>CL: check_intra_done
-alt intra_not_done
-  CL-->>App: INPROGRESS
-else intra_done
-  CL->>Net: post_inter
-end
+    App->>CL: ucc_collective_post(req)
+    CL->>Intra: post(Intra Phase 1)
+    Intra->>S: enqueue memcpyAsync/kernels
+    Intra->>E: cudaEventRecord(E_intra_done, S)
 
-CL->>CL: check_net_done
-alt net_not_done
-  CL-->>App: INPROGRESS
-else net_done
-  CL->>Intra: post_intra_2
-  Intra->>Stream: enqueue_gpu_ops
-end
+    loop progress()
+        CL->>E: cudaEventQuery(E_intra_done)
+        alt not ready
+            CL-->>App: return INPROGRESS
+        else ready
+            CL->>Net: post(Inter-node AllReduce)
+            break
+        end
+    end
 
-CL->>CL: check_final_done
-alt final_not_done
-  CL-->>App: INPROGRESS
-else final_done
-  CL-->>App: OK
-end
+    loop progress()
+        CL->>Net: test/progress network
+        alt not ready
+            CL-->>App: return INPROGRESS
+        else ready
+            CL->>Intra: post(Intra Phase 2)
+            Intra->>S: enqueue memcpyAsync/kernels
+            Intra->>E: cudaEventRecord(E_final_done, S)
+            break
+        end
+    end
+
+    loop progress()
+        CL->>E: cudaEventQuery(E_final_done)
+        alt not ready
+            CL-->>App: return INPROGRESS
+        else ready
+            CL-->>App: complete (UCC_OK)
+        end
+    end
+
 ```
